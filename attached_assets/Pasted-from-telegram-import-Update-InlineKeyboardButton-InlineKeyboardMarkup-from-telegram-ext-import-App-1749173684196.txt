@@ -1,0 +1,441 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import json
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+# Your bot token
+TOKEN = "7955701951:AAHhdAGrb8q0YZRIIarxwIUhbkbH-TjK7ZY"
+
+# File per salvare le richieste di notifica
+WAITLIST_FILE = "waitlist.json"
+
+# Definizione dei prodotti con stock
+products = {
+    
+    "Gorilla Glue": {"in_stock": True, "stock_qty": 50},
+    
+    "Amnesia Haze": {"in_stock": True, "stock_qty": 40}, 
+    
+    "Girl Scout Cookies": {"in_stock": True, "stock_qty": 25},
+    
+    "OG Kush": {"in_stock": True, "stock_qty": 30}
+}
+
+#Quantità disponibili con sconti realistici
+quantities = {
+    "5g": {"grams": 5, "discount": 0, "emoji": "🌱"},
+    "10g": {"grams": 10, "discount": 0, "emoji": "🍃"},
+    "15g": {"grams": 15, "discount": 3, "emoji": "🌿"},  # 3% sconto
+    "25g": {"grams": 25, "discount": 5, "emoji": "💚"},  # 5% sconto
+    "35g": {"grams": 35, "discount": 8, "emoji": "🔥"},  # 8% sconto
+    "50g": {"grams": 50, "discount": 12, "emoji": "⭐"},  # 12% sconto
+    "75g": {"grams": 75, "discount": 18, "emoji": "💎"},  # 18% sconto
+    "100g": {"grams": 100, "discount": 25, "emoji": "👑"} # 25% sconto VIP
+}
+
+# Costi di spedizione
+shipping_costs = {
+    "europa": 10,
+    "mondo": 15
+}
+
+def load_waitlist():
+    """Carica la lista d'attesa dal file"""
+    if os.path.exists(WAITLIST_FILE):
+        with open(WAITLIST_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_waitlist(waitlist):
+    """Salva la lista d'attesa nel file"""
+    with open(WAITLIST_FILE, 'w') as f:
+        json.dump(waitlist, f, indent=2)
+
+def send_email(contact_info, product_name):
+    """Invia email di notifica per prodotto disponibile"""
+    sender_email = "your_shop@gmail.com"  # Cambia con la tua email
+    sender_password = "your_app_password"  # Usa una password per app Gmail
+    
+    # Verifica se il contatto è un'email valida
+    if "@" not in contact_info:
+        print(f"Contatto {contact_info} non è un'email valida")
+        return False
+    
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = contact_info
+    msg['Subject'] = f"🌿 {product_name} è di nuovo disponibile!"
+    
+    body = f"""
+🎉 Buone notizie!
+
+🌿 {product_name} è di nuovo disponibile nel nostro shop!
+
+💎 Qualità premium garantita
+🚀 Spedizione veloce e discreta
+💰 Sconti su quantità maggiori
+
+Ordina subito prima che finisca di nuovo!
+
+Visita il nostro bot Telegram per ordinare.
+    """
+    
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        print(f"Email inviata a {contact_info} per {product_name}")
+        return True
+    except Exception as e:
+        print(f"Errore nell'invio email a {contact_info}: {e}")
+        return False
+
+def calculate_price(grams, discount):
+    """Calcola il prezzo con sconto applicato"""
+    base_price = grams * 10  # 10€ per grammo
+    discounted_price = base_price * (1 - discount / 100)
+    return discounted_price
+
+def get_product_names():
+    """Ottieni lista nomi prodotti"""
+    return list(products.keys())
+
+# Funzione di avvio
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    product_names = get_product_names()
+    keyboard = []
+    
+    for i, product in enumerate(product_names):
+        if products[product]["in_stock"]:
+            button_text = f"🌿 {product} ✅"
+        else:
+            button_text = f"🌿 {product} ❌ (Out of Stock)"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"product_{i}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    welcome_text = (
+        "🌿 *Benvenuto nel nostro shop premium!* 🌿\n\n"
+        "✨ *Qualità superiore garantita*\n"
+        "💰 *Sconti fino al 25% su quantità maggiori*\n"
+        "🚚 *Spedizione: 10€ (Europa) | 15€ (Resto del mondo)*\n"
+        "🚀 *Consegna rapida e discreta*\n\n"
+        "👇 Scegli il tuo prodotto preferito:"
+    )
+    await update.message.reply_text(welcome_text, parse_mode='Markdown', reply_markup=reply_markup)
+
+# Gestione della selezione del prodotto e quantità
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data.startswith("product_"):
+        # Selezione del prodotto
+        product_index = int(query.data.split("_")[1])
+        product_names = get_product_names()
+        product_name = product_names[product_index]
+        
+        # Controlla se il prodotto è disponibile
+        if not products[product_name]["in_stock"]:
+            # Prodotto out of stock
+            out_of_stock_text = (
+                f"😔 *Ci dispiace!*\n\n"
+                f"🌿 *{product_name}* è attualmente *esaurito*\n\n"
+                f"💡 *Vuoi essere avvisato quando torna disponibile?*\n"
+                f"📧 Lascia la tua email o numero di telefono e ti contatteremo appena il prodotto sarà di nuovo in stock!\n\n"
+                f"👇 Scrivi la tua email o telefono:"
+            )
+            
+            keyboard = [
+                [InlineKeyboardButton("⬅️ Torna ai prodotti", callback_data="back_to_products")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Salva il prodotto richiesto per l'utente
+            context.user_data['waiting_product'] = product_name
+            context.user_data['waiting_contact'] = True
+            
+            await query.edit_message_text(
+                text=out_of_stock_text,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Prodotto disponibile - mostra quantità
+        keyboard = []
+        for qty, info in quantities.items():
+            price = calculate_price(info["grams"], info["discount"])
+            original_price = info["grams"] * 10
+            
+            if info["discount"] > 0:
+                savings = original_price - price
+                button_text = f"{info['emoji']} {qty} - €{price:.2f} (RISPARMI €{savings:.2f}!)"
+            else:
+                button_text = f"{info['emoji']} {qty} - €{price:.2f}"
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"qty_{product_index}_{qty}")])
+        
+        # Bottone per tornare indietro
+        keyboard.append([InlineKeyboardButton("⬅️ Torna ai prodotti", callback_data="back_to_products")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        stock_qty = products[product_name]["stock_qty"]
+        product_text = (
+            f"🌿 *{product_name}* - Premium Quality ✅\n\n"
+            f"📦 *Disponibili: {stock_qty}g*\n"
+            f"💰 *Prezzo base: 10€/g*\n"
+            f"🎯 *Più acquisti, più risparmi!*\n"
+            f"🚚 *Spedizione: 10€ (Europa) | 15€ (Mondo)*\n\n"
+            f"👇 Scegli la tua quantità:"
+        )
+        
+        await query.edit_message_text(
+            text=product_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    elif query.data.startswith("qty_"):
+        # Selezione quantità - chiedi zona spedizione
+        parts = query.data.split("_")
+        product_index = int(parts[1])
+        quantity = parts[2]
+        
+        context.user_data['selected_product_index'] = product_index
+        context.user_data['selected_quantity'] = quantity
+        
+        keyboard = [
+            [InlineKeyboardButton("🇪🇺 Europa (10€)", callback_data="shipping_europa")],
+            [InlineKeyboardButton("🌍 Resto del mondo (15€)", callback_data="shipping_mondo")],
+            [InlineKeyboardButton("⬅️ Indietro", callback_data=f"product_{product_index}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        shipping_text = (
+            "🚚 *Seleziona la tua zona di spedizione:*\n\n"
+            "🇪🇺 *Europa*: 10€\n"
+            "🌍 *Resto del mondo*: 15€\n\n"
+            "👇 Scegli la tua zona:"
+        )
+        
+        await query.edit_message_text(
+            text=shipping_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    elif query.data.startswith("shipping_"):
+        # Calcolo finale con spedizione
+        shipping_zone = query.data.split("_")[1]
+        product_index = context.user_data.get('selected_product_index')
+        quantity = context.user_data.get('selected_quantity')
+        
+        product_names = get_product_names()
+        product_name = product_names[product_index]
+        qty_info = quantities[quantity]
+        price = calculate_price(qty_info["grams"], qty_info["discount"])
+        original_price = qty_info["grams"] * 10
+        shipping_cost = shipping_costs[shipping_zone]
+        total_price = price + shipping_cost
+        
+        paypal_link = f"https://paypal.me/example/{total_price:.2f}"
+        
+        # Messaggio principale
+        message_text = f"✅ *Ottima scelta!*\n\n🌿 *{product_name}* - {quantity}\n"
+        
+        # Aggiunta dettagli sconto se presente
+        if qty_info["discount"] > 0:
+            savings = original_price - price
+            message_text += (
+                f"💰 Prezzo normale: €{original_price:.2f}\n"
+                f"🎉 *Sconto {qty_info['discount']}%*: -€{savings:.2f}\n"
+                f"💎 *HAI RISPARMIATO €{savings:.2f}!*\n\n"
+            )
+        
+        zone_text = "🇪🇺 Europa" if shipping_zone == "europa" else "🌍 Resto del mondo"
+        
+        message_text += (
+            f"💳 *Subtotale prodotto: €{price:.2f}*\n"
+            f"🚚 *Spedizione {zone_text}: €{shipping_cost:.2f}*\n"
+            f"💎 *TOTALE FINALE: €{total_price:.2f}*\n\n"
+            f"🚀 *Spedizione veloce e discreta*\n"
+            f"🔒 *Pagamento sicuro*\n\n"
+            f"👇 Procedi al pagamento:\n{paypal_link}"
+        )
+        
+        # Bottoni per altre azioni
+        keyboard = [
+            [InlineKeyboardButton("🛒 Aggiungi altro prodotto", callback_data="back_to_products")],
+            [InlineKeyboardButton("📞 Contatta assistenza", url="https://t.me/supportbot")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text=message_text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    elif query.data == "back_to_products":
+        # Torna alla selezione dei prodotti
+        product_names = get_product_names()
+        keyboard = []
+        
+        for i, product in enumerate(product_names):
+            if products[product]["in_stock"]:
+                button_text = f"🌿 {product} ✅"
+            else:
+                button_text = f"🌿 {product} ❌ (Out of Stock)"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"product_{i}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        back_text = (
+            "🌿 *Scegli un altro prodotto premium!* 🌿\n\n"
+            "💎 *Qualità garantita al 100%*\n"
+            "🎯 *Maggiori quantità = maggiori risparmi*\n"
+            "🚚 *Spedizione: 10€ (Europa) | 15€ (Mondo)*\n\n"
+            "👇 Seleziona il tuo prossimo acquisto:"
+        )
+        await query.edit_message_text(back_text, parse_mode='Markdown', reply_markup=reply_markup)
+
+# Gestione messaggi di testo per email/telefono
+async def handle_contact_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get('waiting_contact'):
+        contact_info = update.message.text
+        product_name = context.user_data.get('waiting_product')
+        user_id = update.effective_user.id
+        
+        # Carica e aggiorna waitlist
+        waitlist = load_waitlist()
+        if product_name not in waitlist:
+            waitlist[product_name] = []
+        
+        # Aggiungi utente alla waitlist se non già presente
+        user_entry = {
+            "user_id": user_id,
+            "contact_info": contact_info,
+            "username": update.effective_user.username or "N/A"
+        }
+        
+        # Controlla se l'utente è già nella lista
+        user_exists = any(entry["user_id"] == user_id for entry in waitlist[product_name])
+        
+        if not user_exists:
+            waitlist[product_name].append(user_entry)
+            save_waitlist(waitlist)
+            
+            confirmation_text = (
+                f"✅ *Perfetto!*\n\n"
+                f"📧 *Contatto salvato*: {contact_info}\n"
+                f"🌿 *Prodotto*: {product_name}\n\n"
+                f"🔔 *Ti avviseremo appena {product_name} tornerà disponibile!*\n\n"
+                f"Grazie per la tua pazienza! 💚"
+            )
+        else:
+            confirmation_text = (
+                f"ℹ️ *Sei già nella lista d'attesa per {product_name}*\n\n"
+                f"Ti contatteremo non appena sarà di nuovo disponibile! 💚"
+            )
+        
+        keyboard = [
+            [InlineKeyboardButton("🛒 Vedi altri prodotti", callback_data="back_to_products")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            text=confirmation_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        
+        # Reset stato utente
+        context.user_data['waiting_contact'] = False
+        context.user_data['waiting_product'] = None
+
+# Funzione per notificare utenti quando prodotto torna in stock (da chiamare manualmente)
+async def notify_product_back_in_stock(product_name, application):
+    """Notifica tutti gli utenti in attesa che il prodotto è tornato disponibile"""
+    # Verifica che il prodotto sia effettivamente disponibile
+    if not products[product_name]["in_stock"]:
+        print(f"{product_name} non è disponibile. Nessuna notifica inviata.")
+        return
+    
+    waitlist = load_waitlist()
+    
+    if product_name in waitlist and waitlist[product_name]:
+        notifications_sent = 0
+        emails_sent = 0
+        
+        for user_entry in waitlist[product_name]:
+            try:
+                user_id = user_entry["user_id"]
+                contact_info = user_entry["contact_info"]
+                
+                # Invia email se il contatto è un'email
+                if "@" in contact_info:
+                    if send_email(contact_info, product_name):
+                        emails_sent += 1
+                
+                # Invia notifica Telegram
+                notification_text = (
+                    f"🎉 *Buone notizie!*\n\n"
+                    f"🌿 *{product_name}* è di nuovo disponibile!\n\n"
+                    f"🛒 *Ordina subito prima che finisca di nuovo!*\n\n"
+                    f"Usa /start per vedere tutti i prodotti disponibili."
+                )
+                
+                await application.bot.send_message(
+                    chat_id=user_id,
+                    text=notification_text,
+                    parse_mode='Markdown'
+                )
+                notifications_sent += 1
+                
+            except Exception as e:
+                print(f"Errore nell'invio notifica a {user_id}: {e}")
+        
+        # Rimuovi utenti notificati dalla waitlist
+        waitlist[product_name] = []
+        save_waitlist(waitlist)
+        print(f"Notifiche inviate per {product_name}: {notifications_sent} Telegram, {emails_sent} email")
+
+# Comando per notificare manualmente (solo per admin)
+async def notify_stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando per notificare che un prodotto è tornato in stock"""
+    if len(context.args) != 1:
+        await update.message.reply_text("Uso: /notify_stock <nome_prodotto>")
+        return
+    
+    product_name = context.args[0]
+    if product_name not in products:
+        await update.message.reply_text(f"Prodotto '{product_name}' non trovato!")
+        return
+    
+    # Invia notifiche
+    await notify_product_back_in_stock(product_name, context.application)
+    await update.message.reply_text(f"✅ Notifiche inviate per {product_name}!")
+
+# Comando per testare le notifiche
+async def test_notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Testa l'invio di notifiche per tutti i prodotti in waitlist"""
+    waitlist = load_waitlist()
+    
+    for product_name in waitlist:
+        if waitlist[product_name]:  # Se ci sono utenti in attesa
+            await notify_product_back_in_stock(product_name, context.application)
+    
+    await update.message.reply_text("✅ Tutte le notifiche sono state inviate!")
+
+# Avvio dell'applicazione
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("notify_stock", notify_stock_command))
+app.add_handler(CommandHandler("test_notify", test_notify_command))
+app.add_handler(CallbackQueryHandler(button))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contact_info))
+
+if __name__ == "__main__":
+    app.run_polling()

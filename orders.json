@@ -1,0 +1,58 @@
+[
+  {
+    "order_id": "GH20250606024003",
+    "user_id": 6497093715,
+    "username": "EratOlee",
+    "product": "Gorilla Glue",
+    "quantity": {
+      "grams": 25,
+      "discount": 12,
+      "emoji": "💚",
+      "tier": "Premium"
+    },
+    "shipping": {
+      "name": "Spedizione Standard Italia",
+      "price": 8,
+      "days": "2-3",
+      "emoji": "🇮🇹"
+    },
+    "shipping_data": {
+      "name": "Christian Madafferi",
+      "address": "Via Pavia 53, San Ferdinando, 89026, Reggio Calabria",
+      "phone": "+39 329 352 4612",
+      "email": "madafferichristian@gmail.com",
+      "notes": "Nessuna nota"
+    },
+    "total_price": 218.98,
+    "status": "pending_payment",
+    "timestamp": "2025-06-06T02:40:03.521480"
+  },
+  {
+    "order_id": "GH20250606032738",
+    "user_id": 6497093715,
+    "username": "EratOlee",
+    "product": "Gorilla Glue",
+    "quantity": {
+      "grams": 5,
+      "discount": 0,
+      "emoji": "🌱",
+      "tier": "Starter"
+    },
+    "shipping": {
+      "name": "Spedizione Standard Italia",
+      "price": 8,
+      "days": "2-3",
+      "emoji": "🇮🇹"
+    },
+    "shipping_data": {
+      "name": "Christian Madafferi",
+      "address": "Via Pavia 53, San Ferdinando, 89026, Reggio Calabria",
+      "phone": "+39 329 352 4612",
+      "email": "grucegomeu19@gmail.com",
+      "notes": "Nessuna nota"
+    },
+    "total_price": 55.95,
+    "status": "pending_payment",
+    "timestamp": "2025-06-06T03:27:38.746942"
+  }
+]
